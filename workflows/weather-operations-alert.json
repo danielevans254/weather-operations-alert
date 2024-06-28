@@ -1,0 +1,607 @@
+{
+  "id": "07e5ac09-8f6a-415a-b411-06ea489bc82a",
+  "name": "06 - Weather and Air Quality Operations Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Weather operations alert\n\nDisabled schedule or webhook → Open-Meteo forecast + air quality → threshold engine → optional Slack.\n\nNo weather API key is required. Test mode uses a fixed forecast.",
+        "width": 520,
+        "height": 300,
+        "color": 4
+      },
+      "id": "f3514f8b-e49f-465a-b3e7-0aae8c5257e2",
+      "name": "Weather Architecture",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -760,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "weather-operations",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "2dd59e11-20d1-43f3-8872-fb075a15894e",
+      "name": "Weather Test Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -720,
+        -80
+      ],
+      "webhookId": "25c62b95-c553-4a1f-bbd4-12bc49a4f05c"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "id": "be3bd986-5ea3-4b9d-ac7d-7bc7e5f4e513",
+      "name": "Morning Weather Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        160
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw=$json.body ?? $json; return [{json:{test_mode:raw.test_mode===true,run_id:String(raw.run_id || ('weather-'+Date.now())),location:String(raw.location || $env.WEATHER_LOCATION || 'Manila'),latitude:Number(raw.latitude ?? $env.WEATHER_LATITUDE ?? 14.5995),longitude:Number(raw.longitude ?? $env.WEATHER_LONGITUDE ?? 120.9842),thresholds:{heat_c:Number(raw.thresholds?.heat_c ?? 35),rain_probability:Number(raw.thresholds?.rain_probability ?? 70),wind_kph:Number(raw.thresholds?.wind_kph ?? 50),air_quality_index:Number(raw.thresholds?.air_quality_index ?? 100)},mock_forecast:raw.mock_forecast || null}}];"
+      },
+      "id": "8555a30b-9116-489e-b7d2-ef9206bf119b",
+      "name": "Normalize Weather Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -440,
+        20
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "263cb7d2-f735-4b54-abf5-63788b3b734b",
+              "leftValue": "={{ $json.test_mode }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "47852d72-f219-4cee-9125-b80efb4f224a",
+      "name": "Weather Test Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -200,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d=$input.first().json; if(!d.mock_forecast) throw new Error('mock_forecast is required in test mode'); return [{json:{forecast:{...d.mock_forecast,location:d.mock_forecast.location || d.location}}}];"
+      },
+      "id": "61a9b20e-3309-4410-88f8-a4a19e3efba6",
+      "name": "Use Mock Forecast",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        -140
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.open-meteo.com/v1/forecast",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "latitude",
+              "value": "={{ $('Normalize Weather Request').first().json.latitude }}"
+            },
+            {
+              "name": "longitude",
+              "value": "={{ $('Normalize Weather Request').first().json.longitude }}"
+            },
+            {
+              "name": "daily",
+              "value": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max"
+            },
+            {
+              "name": "forecast_days",
+              "value": "1"
+            },
+            {
+              "name": "timezone",
+              "value": "auto"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a4df6d99-5bba-41eb-807e-40c5b5e4f4e2",
+      "name": "Fetch Weather Forecast",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        40,
+        120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notesInFlow": true,
+      "notes": "Open-Meteo public endpoint; no API key is required for non-commercial fair-use access."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://air-quality-api.open-meteo.com/v1/air-quality",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "latitude",
+              "value": "={{ $('Normalize Weather Request').first().json.latitude }}"
+            },
+            {
+              "name": "longitude",
+              "value": "={{ $('Normalize Weather Request').first().json.longitude }}"
+            },
+            {
+              "name": "current",
+              "value": "us_aqi"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d1c01f1f-d6e0-42e6-b475-1b0f063bf43b",
+      "name": "Fetch Air Quality",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notesInFlow": true,
+      "notes": "Separate public air-quality endpoint; keep call volume within provider limits."
+    },
+    {
+      "parameters": {
+        "jsCode": "const req=$('Normalize Weather Request').first().json; const weather=$('Fetch Weather Forecast').first().json.body ?? $('Fetch Weather Forecast').first().json; const air=$input.first().json.body ?? $input.first().json; return [{json:{forecast:{location:req.location,forecast_date:weather.daily?.time?.[0] || null,max_temperature_c:weather.daily?.temperature_2m_max?.[0],min_temperature_c:weather.daily?.temperature_2m_min?.[0],precipitation_probability:weather.daily?.precipitation_probability_max?.[0],wind_speed_kph:weather.daily?.wind_speed_10m_max?.[0],air_quality_index:air.current?.us_aqi}}}];"
+      },
+      "id": "30b8e0be-04c4-4a33-bf2d-1513ee73e778",
+      "name": "Combine Weather Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        120
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const evaluate = function evaluateWeatherRisk(forecast, thresholds = {}) {\n  const data = forecast && typeof forecast === 'object' ? forecast : {};\n  const limit = {\n    heat_c: Number(thresholds.heat_c ?? 35),\n    rain_probability: Number(thresholds.rain_probability ?? 70),\n    wind_kph: Number(thresholds.wind_kph ?? 50),\n    air_quality_index: Number(thresholds.air_quality_index ?? 100),\n  };\n  const metrics = {\n    max_temperature_c: Number(data.max_temperature_c),\n    min_temperature_c: Number(data.min_temperature_c),\n    precipitation_probability: Number(data.precipitation_probability),\n    wind_speed_kph: Number(data.wind_speed_kph),\n    air_quality_index: Number(data.air_quality_index),\n  };\n  const alerts = [];\n  if (Number.isFinite(metrics.max_temperature_c) && metrics.max_temperature_c >= limit.heat_c) {\n    alerts.push({ type: 'heat', severity: metrics.max_temperature_c >= limit.heat_c + 5 ? 'high' : 'medium', value: metrics.max_temperature_c, threshold: limit.heat_c });\n  }\n  if (Number.isFinite(metrics.precipitation_probability) && metrics.precipitation_probability >= limit.rain_probability) {\n    alerts.push({ type: 'rain', severity: metrics.precipitation_probability >= 90 ? 'high' : 'medium', value: metrics.precipitation_probability, threshold: limit.rain_probability });\n  }\n  if (Number.isFinite(metrics.wind_speed_kph) && metrics.wind_speed_kph >= limit.wind_kph) {\n    alerts.push({ type: 'wind', severity: metrics.wind_speed_kph >= limit.wind_kph * 1.5 ? 'high' : 'medium', value: metrics.wind_speed_kph, threshold: limit.wind_kph });\n  }\n  if (Number.isFinite(metrics.air_quality_index) && metrics.air_quality_index >= limit.air_quality_index) {\n    alerts.push({ type: 'air_quality', severity: metrics.air_quality_index >= 150 ? 'high' : 'medium', value: metrics.air_quality_index, threshold: limit.air_quality_index });\n  }\n  return {\n    location: String(data.location || 'Configured location'),\n    forecast_date: data.forecast_date || null,\n    metrics,\n    thresholds: limit,\n    alerts,\n    alert_count: alerts.length,\n    severity: alerts.some((a) => a.severity === 'high') ? 'high' : alerts.length ? 'medium' : 'none',\n  };\n};\nconst req=$('Normalize Weather Request').first().json;\nconst result=evaluate($input.first().json.forecast ?? $input.first().json,req.thresholds);\nreturn [{json:{...req,...result}}];"
+      },
+      "id": "ffb8a912-1255-41e8-9b44-1e07d94d1eb8",
+      "name": "Evaluate Weather Risk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "Pure threshold engine keeps operational decisions deterministic and auditable."
+    },
+    {
+      "parameters": {
+        "jsCode": "const d=$input.first().json; const detail=d.alerts.map(a=>'- '+a.type+': '+a.value+' (threshold '+a.threshold+', '+a.severity+')').join('\\n'); const text='Weather operations check — '+d.location+'\\nSeverity: '+d.severity+'\\n'+(detail || 'No thresholds exceeded.'); return [{json:{...d,notification_text:text}}];"
+      },
+      "id": "91e0c645-ed90-4371-b917-deaedd9650b8",
+      "name": "Build Weather Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        0
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "53f3b310-f593-48d6-9d8a-ce753546918a",
+              "leftValue": "={{ $json.test_mode }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f524c7fa-8125-4cb8-a728-f3074c3781f7",
+      "name": "Weather Notification Test Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(i=>({json:{...i.json,notification:{system:'slack',status:'mocked'}}}));"
+      },
+      "id": "b672b712-340b-4cdf-8235-0ab8230b8b6a",
+      "name": "Mock Weather Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -160
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ccc119dd-3a23-4cb5-8d89-4e7538f575e9",
+              "leftValue": "={{ Boolean($env.SLACK_WEBHOOK_URL && !$env.SLACK_WEBHOOK_URL.includes('CHANGE_ME')) && $json.alert_count > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9675ec05-c42d-4f31-94fd-c47c647862f4",
+      "name": "Send Weather Slack?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {text:$json.notification_text} }}",
+        "options": {}
+      },
+      "id": "4dcc35f9-f2db-4ec2-93d7-4e80bd600b0a",
+      "name": "Send Weather Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        20
+      ],
+      "retryOnFail": false,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notesInFlow": true,
+      "notes": "Sends only when one or more thresholds are exceeded."
+    },
+    {
+      "parameters": {
+        "jsCode": "const d=$('Build Weather Alert').first().json; return [{json:{...d,notification:{system:'slack',status:'sent'}}}];"
+      },
+      "id": "8edc6080-58a3-41cd-bc26-0fe11fd58266",
+      "name": "Mark Weather Slack Sent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        20
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(i=>({json:{...i.json,notification:{system:'slack',status:'skipped',reason:i.json.alert_count?'not_configured':'no_alerts'}}}));"
+      },
+      "id": "d03893b6-0424-485e-8313-f60cbc8e5a90",
+      "name": "Skip Weather Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        160
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const d=$input.first().json; return [{json:{status:'completed',run_id:d.run_id,test_mode:d.test_mode,location:d.location,forecast_date:d.forecast_date,severity:d.severity,alert_count:d.alert_count,alerts:d.alerts,metrics:d.metrics,notification:d.notification,completed_at:new Date().toISOString()}}];"
+      },
+      "id": "6d6517e9-791d-40f4-81a3-53cb422fde0b",
+      "name": "Weather Final Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2260,
+        0
+      ],
+      "notesInFlow": false
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Weather Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Weather Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Morning Weather Schedule": {
+      "main": [
+        [
+          {
+            "node": "Normalize Weather Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Weather Request": {
+      "main": [
+        [
+          {
+            "node": "Weather Test Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weather Test Mode?": {
+      "main": [
+        [
+          {
+            "node": "Use Mock Forecast",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Weather Forecast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weather Forecast": {
+      "main": [
+        [
+          {
+            "node": "Fetch Air Quality",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Air Quality": {
+      "main": [
+        [
+          {
+            "node": "Combine Weather Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Mock Forecast": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Weather Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Weather Data": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Weather Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Weather Risk": {
+      "main": [
+        [
+          {
+            "node": "Build Weather Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Weather Alert": {
+      "main": [
+        [
+          {
+            "node": "Weather Notification Test Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weather Notification Test Mode?": {
+      "main": [
+        [
+          {
+            "node": "Mock Weather Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Weather Slack?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Weather Slack?": {
+      "main": [
+        [
+          {
+            "node": "Send Weather Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Weather Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Weather Slack Alert": {
+      "main": [
+        [
+          {
+            "node": "Mark Weather Slack Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Weather Notification": {
+      "main": [
+        [
+          {
+            "node": "Weather Final Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Weather Slack Sent": {
+      "main": [
+        [
+          {
+            "node": "Weather Final Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Weather Notification": {
+      "main": [
+        [
+          {
+            "node": "Weather Final Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "ccb46e69-708f-4703-ba8c-3822b3f21840",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "description": "Monitor keyless public weather and air-quality data and alert when operational thresholds are exceeded."
+}

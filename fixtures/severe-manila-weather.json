@@ -1,0 +1,26 @@
+{
+  "test_mode": true,
+  "run_id": "weather-demo-001",
+  "location": "Manila test site",
+  "latitude": 14.5995,
+  "longitude": 120.9842,
+  "thresholds": {
+    "heat_c": 35,
+    "rain_probability": 70,
+    "wind_kph": 50,
+    "air_quality_index": 100
+  },
+  "mock_forecast": {
+    "forecast_date": "2026-09-29",
+    "max_temperature_c": 41,
+    "min_temperature_c": 27,
+    "precipitation_probability": 95,
+    "wind_speed_kph": 45,
+    "air_quality_index": 160
+  },
+  "expected": {
+    "severity": "high",
+    "alert_count": 3,
+    "notification_status": "mocked"
+  }
+}
